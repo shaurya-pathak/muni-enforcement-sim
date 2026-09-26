@@ -45,6 +45,7 @@ const state = {
   timer: null,
   simBusy: false,
   pendingModelUpdate: false,
+  modelReady: false,
 };
 
 const formatMoney = (value, compact = false, digits = 0) => {
@@ -951,6 +952,17 @@ function escapeHtml(text) {
 }
 
 function renderComparison(data) {
+  if (!state.modelReady) {
+    el("comparisonTeamLabel").textContent = "Preparing the 90-day model";
+    el("comparisonRows").innerHTML = '<tr><td colspan="8">Calculating strategy results…</td></tr>';
+    el("staffingRecommendation").textContent = "Calculating team break-even…";
+    el("staffingRows").innerHTML = '<tr><td colspan="4">Calculating marginal value per team…</td></tr>';
+    el("annualProjection").textContent = "Annual run rate: calculating…";
+    for (const id of ["nowChecked", "nowCitations", "nowExposed", "nowPayChance", "nowFare", "nowFineRevenue"]) el(id).textContent = "—";
+    el("nowTeams").textContent = "—";
+    el("nowTeamsStatus").textContent = "Preparing inspection teams…";
+    return;
+  }
   const inputs = modelInputs();
   const annualBaseline = FARE_BENCHMARK;
   el("comparisonTeamLabel").textContent = `${state.teamCount} ${state.teamCount === 1 ? "team" : "teams"} · same rider population`;
@@ -1157,15 +1169,28 @@ async function init() {
   attachHandlers();
   try {
     const dataBase = `${import.meta.env.BASE_URL}data/`;
-    const [mapResponse, scheduleResponse] = await Promise.all([fetch(`${dataBase}muni-map.json`), fetch(`${dataBase}muni-schedule.json`)]);
+    const mapPromise = fetch(`${dataBase}muni-map.json`);
+    const schedulePromise = fetch(`${dataBase}muni-schedule.json`);
+    const mapResponse = await mapPromise;
     if (!mapResponse.ok) throw new Error(`Map data could not load (${mapResponse.status})`);
-    if (!scheduleResponse.ok) throw new Error(`GTFS schedule data could not load (${scheduleResponse.status})`);
     const mapData = await mapResponse.json();
+    mapData.schedule = { trips: [] };
+    state.map = buildDataIndex(mapData);
+    populateRoutePicker(state.map);
+    chooseInitialStop(state.map);
+    render();
+    el("mapLoading").classList.add("is-progress");
+    el("mapLoading").textContent = "Map ready · preparing inspection model…";
+    el("mapLoading").hidden = false;
+    await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+    const scheduleResponse = await schedulePromise;
+    if (!scheduleResponse.ok) throw new Error(`GTFS schedule data could not load (${scheduleResponse.status})`);
     mapData.schedule = await scheduleResponse.json();
     state.map = buildDataIndex(mapData);
     populateRoutePicker(state.map);
     chooseInitialStop(state.map);
-    el("mapLoading").textContent = "Simulating coordinated inspection teams…";
+    el("mapLoading").textContent = "Calculating 90-day strategies and staffing…";
     const inputs = modelInputs();
     const staffing = calculateStaffingCurve(state.map, inputs);
     state.teamCount = staffing.recommended;
@@ -1175,11 +1200,13 @@ async function init() {
       const cached = strategy.id === "busiest" ? staffing.scenarios.get(state.teamCount) : null;
       state.scenarios.set(strategy.id, cached || buildScenario(state.map, strategy.id, inputs, strategy.id === "none" ? 0 : state.teamCount));
     }
+    state.modelReady = true;
     const inspection = state.scenarios.get(state.strategy)?.schedule[state.day]
       ?.filter((event) => event.minute <= state.minute)
       .sort((a, b) => Math.abs(a.minute - state.minute) - Math.abs(b.minute - state.minute))[0];
     if (inspection?.stopId) state.selectedStopId = inspection.stopId;
     render();
+    el("mapLoading").classList.remove("is-progress");
     const resizeObserver = new ResizeObserver(() => renderMap(state.map));
     resizeObserver.observe(el("cityMap").parentElement);
   } catch (error) {

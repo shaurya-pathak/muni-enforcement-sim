@@ -73,6 +73,7 @@ a { color: inherit; }
 .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #4a9d87; margin-right: 6px; vertical-align: 1px; }
 .zoom-divider { color: #adbbb9; margin: 0 5px; }
 .map-loading { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%); padding: 12px 17px; border-radius: 12px; background: #fff; color: var(--muted); box-shadow: 0 2px 15px #1a344012; font-size: 12px; }
+.map-loading.is-progress { top: auto; left: auto; right: 12px; bottom: 12px; transform: none; padding: 8px 11px; font-size: 11px; }
 .map-loading[hidden] { display: none; }
 
 .playback-bar { display: grid; grid-template-columns: auto minmax(120px, .72fr) minmax(230px, 1.5fr); gap: 17px; align-items: center; padding: 13px 13px 12px; margin-top: 10px; border: 1px solid #dfe6ed; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgb(25 47 68 / .035); }
