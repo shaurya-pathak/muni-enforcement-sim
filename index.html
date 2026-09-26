@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f5f2" />
+    <meta name="description" content="An interactive sandbox for exploring Muni fare inspection strategies, projected payment behavior, and net fare revenue." />
+    <title>Muni Enforcement Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Muni Enforcement Lab home">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span class="brand-name">Muni <span>Enforcement Lab</span></span>
+        </a>
+        <div class="topbar-right">
+          <span class="sandbox-tag"><span class="tag-dot"></span> Exploratory model</span>
+          <a class="source-link" href="#sources">Sources and assumptions <span aria-hidden="true">↗</span></a>
+        </div>
+      </header>
+
+      <main>
+        <section class="workspace" aria-label="Muni fare enforcement simulation">
+          <div class="map-column">
+            <div class="section-heading">
+              <div>
+                
+                <h1>Inspector deployment</h1>
+              </div>
+              <label class="strategy-picker">
+                <span>Strategy</span>
+                <select id="strategySelect" aria-label="Select an inspection strategy">
+                  <option value="busiest">Best modeled return</option>
+                  <option value="regular">Distributed exposure</option>
+                  <option value="random">Random ride-alongs</option>
+                  <option value="pulse">Pulse, then rotate</option>
+                  <option value="none">No enforcement</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="map-frame">
+              <svg id="cityMap" role="img" aria-labelledby="mapTitle mapDescription">
+                <title id="mapTitle">San Francisco Muni route and inspector simulation map</title>
+                <desc id="mapDescription">Select a stop to see predicted riders and modeled payment probability by time of day. Inspector teams are shown as moving stars.</desc>
+              </svg>
+              <div class="map-legend" aria-label="Map legend">
+                <div class="legend-label" id="mapLegendLabel">Change from baseline · 50%</div>
+                <div class="legend-scale"><span>− pp</span><span class="legend-gradient"></span><span>+ pp</span></div>
+                <div class="legend-keys"><span><i class="legend-stop"></i> Stop compliance</span><span><i class="legend-star">★</i> Inspector location</span></div>
+              </div>
+              <div id="mapLoading" class="map-loading" role="status">Loading route and street geometry…</div>
+            </div>
+
+            <div class="playback-bar">
+              <div class="playback-controls">
+                <button id="playButton" class="play-button" type="button" aria-label="Play simulation" aria-pressed="false"><span class="play-icon">▶</span><span class="play-label">Play</span></button>
+                <label class="speed-control"><span class="sr-only">Playback speed</span><select id="speedSelect" aria-label="Playback speed"><option value="1" selected>1×</option><option value="5">5×</option><option value="15">15×</option></select></label>
+              </div>
+              <label class="day-control">
+                <span class="control-title">Day <b id="dayValue">18</b><span class="muted"> of 90</span></span>
+                <input id="daySlider" type="range" min="1" max="90" value="18" aria-label="Simulation day" />
+              </label>
+              <label class="time-control">
+                <span class="control-title">Time <b id="timeValue">5:30 PM</b></span>
+                <input id="timeSlider" type="range" min="300" max="1410" step="5" value="1050" aria-label="Time of day" />
+                <span class="time-ticks"><span>5 am</span><span>Noon</span><span>7 pm</span><span>Midnight</span></span>
+              </label>
+            </div>
+
+            <div class="now-strip" aria-live="polite">
+              <div class="now-title"><span class="live-dot"></span><span>Now</span></div>
+              <div class="now-stat"><span id="nowTeams">1 team</span><small id="nowTeamsStatus">on route</small></div>
+              <div class="now-stat"><strong id="nowChecked">0</strong><small>checked today</small></div>
+              <div class="now-stat"><strong id="nowCitations">0</strong><small>citations · today</small></div>
+              <div class="now-stat"><strong id="nowExposed">0</strong><small>saw inspection</small></div>
+              <div class="now-stat"><strong id="nowPayChance">50%</strong><small id="nowPayChange">chance to pay · selected stop · fare due</small></div>
+              <div class="now-stat now-money"><strong id="nowFare">$0</strong><small>added fares · today to now</small></div>
+              <div class="now-stat now-money"><strong id="nowFineRevenue">$0</strong><small>fine receipts · today to now</small></div>
+            </div>
+          </div>
+
+          <aside class="detail-column" aria-label="Selected stop details">
+            <section class="stop-panel">
+              <div class="detail-heading">
+                <div>
+                  <div class="eyebrow">Stop and time</div>
+                  <h2 id="selectedStopName">Choose a stop</h2>
+                </div>
+                <button class="line-filter" id="lineFocusButton" type="button" aria-label="Toggle selected line focus">Lines <span id="selectedStopLines">All</span></button>
+              </div>
+              <div class="chart-caption"><span>Predicted riders <i class="caption-blue"></i> Chance to pay when fare is due <i class="caption-orange"></i></span><span>By time of day</span></div>
+              <div class="chart-box">
+                <svg id="stopChart" role="img" aria-label="Predicted boarding riders and modeled chance of paying by time of day. Both curves share the same time axis."></svg>
+              </div>
+              <div class="selected-time-readout" aria-live="polite">
+                <span class="readout-time" id="selectedCohortTime">5:30 PM</span>
+                <span><b id="selectedRiders">—</b> predicted boardings</span>
+                <span><b id="selectedChance">50%</b> chance to pay <small id="selectedChange">at baseline · fare due</small></span>
+              </div>
+              <div class="cohort-detail">
+                <div class="cohort-topline"><span>Frequent riders</span><span class="cohort-count"><b id="cohortRiderCount">50</b> synthetic riders</span></div>
+                <label class="rider-picker"><span>Sample rider</span><select id="riderSelect" aria-label="Sample frequent rider"></select></label>
+                <div class="rider-profile" aria-live="polite">
+                  <div class="rider-avatar" id="riderAvatar">07</div>
+                  <div class="rider-copy"><strong id="riderTitle">Rider 07 · frequent rider</strong><span id="riderHistory">No inspection exposure yet</span></div>
+                  <div class="rider-prob"><b id="riderProbability">—</b><span>pays next ride</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="line-panel">
+              <div class="line-panel-heading"><div><div class="eyebrow">Route context</div><h2>Line at this stop</h2></div><select id="lineSelect" aria-label="Focus a Muni line"><option value="all">All lines</option></select></div>
+              <div id="lineStats" class="line-stats" aria-live="polite"></div>
+              <div class="line-rank-heading"><span>Net fare return</span><span>By line</span></div>
+              <div id="lineRanking" class="line-ranking"></div>
+            </section>
+
+            <details id="assumptions" class="assumption-panel">
+              <summary><span>Model assumptions</span><span class="summary-caret">⌄</span></summary>
+              <div class="assumption-controls">
+                <label class="assumption-control"><span>Baseline chance to pay <b id="baselineLabel">50%</b></span><input id="baselineInput" type="range" min="10" max="90" step="1" value="50" /></label>
+                <label class="assumption-control"><span>Effect after seeing inspection <b id="visibleLiftLabel">+40 pp</b></span><input id="visibleLiftInput" type="range" min="0" max="50" step="1" value="40" /></label>
+                <label class="assumption-control"><span>Extra effect after personal check <b id="directLiftLabel">+8 pp</b></span><input id="directLiftInput" type="range" min="0" max="50" step="1" value="8" /></label>
+                <label class="assumption-control"><span>Checks / inspector / minute <b id="rateLabel">4</b></span><input id="rateInput" type="range" min="2" max="6" step="1" value="4" /></label>
+                <label class="assumption-control"><span>Checks resulting in a citation <b id="citationRateLabel">5%</b></span><input id="citationRateInput" type="range" min="0" max="15" step="1" value="5" /></label>
+                <label class="assumption-control"><span>Fine per citation <b id="fineLabel">$134</b></span><input id="fineInput" type="range" min="50" max="200" step="2" value="134" /></label>
+                <label class="assumption-control"><span>Fine amount collected <b id="collectionLabel">50%</b></span><input id="collectionInput" type="range" min="0" max="100" step="5" value="50" /></label>
+                <label class="assumption-control"><span>Usual travel-time variation <b id="spreadLabel">45 min</b></span><input id="spreadInput" type="range" min="15" max="90" step="15" value="45" /></label>
+                <label class="assumption-control"><span>Route variation <b id="temperatureLabel">15%</b></span><input id="temperatureInput" type="range" min="0" max="50" step="5" value="15" /></label>
+                <label class="assumption-control"><span>Cross-route memory share <b id="routeCarryoverLabel">25%</b></span><input id="routeCarryoverInput" type="range" min="0" max="100" step="5" value="25" /></label>
+                <label class="assumption-control"><span>Effect half-life <b id="decayLabel">30 days</b></span><select id="decayInput"><option value="0.099021">Fast · 7 days</option><option value="0.023105" selected>Slow · 30 days</option><option value="0.007702">Very slow · 90 days</option></select></label>
+                <label class="assumption-control"><span>Cost per inspector / year <b id="staffCostLabel">$60,000</b></span><input id="staffCostInput" type="range" min="30000" max="120000" step="5000" value="60000" /></label>
+                <label class="assumption-control"><span>Revenue per new fare payment <b id="fareLabel">$2.85</b></span><input id="fareInput" type="range" min="0.50" max="3.50" step="0.05" value="2.85" /></label>
+                <label class="assumption-control"><span>Trips with no new fare due <b id="coveredFareShareLabel">20%</b></span><input id="coveredFareShareInput" type="range" min="0" max="80" step="5" value="20" /></label>
+                <label class="assumption-control"><span>Discounted fares among fare-due trips <b id="discountFareShareLabel">10%</b></span><input id="discountFareShareInput" type="range" min="0" max="100" step="5" value="10" /></label>
+                <div class="assumption-note">
+                  <p><strong>Fare eligibility.</strong> A free ride is not fare evasion. SFMTA's <a href="https://www.sfmta.com/blog/free-and-discounted-fare-programs-make-your-muni-ride-more-affordable" target="_blank" rel="noreferrer">free-fare programs</a> include youth 18 and under, eligible low-income seniors, eligible people with disabilities, and Access Pass riders. Low-income adults are not automatically exempt: Clipper START offers eligible adults a 50% discount, while some senior and disability fares are discounted. Valid passes and transfer rides also have no new fare due. The model excludes no-new-fare trips from added fare revenue and citations, and prices discounted trips at half fare.</p>
+                  <p><strong>Unknown rider shares.</strong> The default 20% no-new-fare share and 10% discounted-fare share are adjustable placeholders, not measured Muni trip shares. SFMTA's <a href="https://www.sfmta.com/media/42082/download?inline=" target="_blank" rel="noreferrer">FY25–26 budget</a> reports $23.4M in fare-program impact, but that dollar figure does not tell us what portion of trips fall into each category. These sliders let users see how that uncertainty changes results.</p>
+                  <p><strong>Inspection and behavior.</strong> Seeing an inspection adds +<span id="visibleLiftLabelNote">40 pp</span> to the cohort's next-ride chance to pay; a personal check adds another +<span id="directLiftNote">8 pp</span>. From a 50% starting point, that gives 90% after seeing and 98% after being checked, before spillover. Effects fade toward baseline with the selected half-life (30 days by default). The chance-to-pay curve describes riders with a fare due; it does not imply that eligible free riders should pay.</p>
+                  <p><strong>Operations.</strong> Inspectors work an 8-hour shift (11 AM–7 PM) and complete two 5-minute checks per ride when schedules permit. The 4-checks-per-minute rate is an editable sandbox assumption. Journeys follow scheduled weekday GTFS stop times, not real-time vehicle locations; this representative timetable repeats across the 90-day simulation. Bus loads, stop-by-time boardings, rider behavior, visibility, and inspection outcomes are synthetic. “Best modeled return” ranks trips by expected fare recovery plus collected citations and avoids recently used routes. Route variation adds unpredictability. Fine amount is $134; the 5% citation rate and 50% collection rate are editable assumptions, not measured Muni outcomes.</p>
+                </div>
+              </div>
+            </details>
+          </aside>
+        </section>
+
+        <section class="comparison-section" aria-label="Strategy comparison">
+          <div class="comparison-heading"><div><div class="eyebrow" id="comparisonTeamLabel">Staffing · same rider population</div><h2>Compare deployment strategies</h2></div><div class="comparison-note">90-day totals · fares + collected fines − prorated inspector cost<br /><span id="annualProjection">Annual run rate from 90 days: —</span><br /><span>FY2025 reported fare revenue: $111.419M</span></div></div>
+          <div class="comparison-table-wrap"><table class="comparison-table"><thead><tr><th>Strategy</th><th>Checked · 90 days</th><th>Exposed · 90 days</th><th>Expected citations · 90 days</th><th>Fare gain · 90 days</th><th>Collected fines · 90 days</th><th>Inspector cost · 90 days</th><th>Net · 90 days</th></tr></thead><tbody id="comparisonRows"></tbody></table></div>
+          <div class="staffing-break-even"><div class="staffing-heading"><div><div class="eyebrow">Staffing break-even · best modeled return</div><h3>Marginal value by team</h3></div><p id="staffingRecommendation">Calculating paired 90-day runs…</p></div><div class="comparison-table-wrap"><table class="comparison-table staffing-table"><thead><tr><th>Added team</th><th>Annualized added fares + fines</th><th>Annual cost</th><th>Marginal net / year</th></tr></thead><tbody id="staffingRows"></tbody></table></div><div class="staffing-note">Each row compares the same 90-day rider model and coordinated itinerary with N teams versus N−1, then annualizes the incremental revenue. The first non-positive marginal net marks the modeled break-even boundary. This is conditional on editable synthetic behavior and cost assumptions, not a Muni forecast.</div></div>
+        </section>
+
+        <footer id="sources" class="sources-footer">
+          <div class="source-left"><span class="footer-mark">M</span><span>Built from public route and ridership data. No live rider or enforcement records.</span></div>
+          <div class="source-links"><a href="https://www.sfmta.com/reports/average-daily-muni-boardings-route-and-month-pre-pandemic-present" target="_blank" rel="noreferrer">Route boardings</a><a href="https://www.sfmta.com/media/43961/download?inline=" target="_blank" rel="noreferrer">FY2025 revenue</a><a href="https://www.sfmta.com/getting-around/muni/fares" target="_blank" rel="noreferrer">Fare amount</a><a href="https://www.sfmta.com/media/45130/download?inline=" target="_blank" rel="noreferrer">FY2027 fine schedule</a><a href="https://www.sfmta.com/projects/paying-your-fares-keeps-us-moving" target="_blank" rel="noreferrer">Fare compliance policy</a><a href="https://www.sfmta.com/blog/free-and-discounted-fare-programs-make-your-muni-ride-more-affordable" target="_blank" rel="noreferrer">Free and discounted fares</a><a href="https://www.sfmta.com/media/42082/download?inline=" target="_blank" rel="noreferrer">Fare subsidy budget</a><a href="https://www.sfchronicle.com/sf/article/muni-fare-evasion-ticket-22386059.php" target="_blank" rel="noreferrer">Citation-rate reporting</a><a href="https://muni-gtfs.apps.sfmta.com/data/muni_gtfs-current.zip" target="_blank" rel="noreferrer">SFMTA GTFS</a><a href="https://data.sf.gov/-/Arterial-Streets-of-San-Francisco/gnsq-9x5h" target="_blank" rel="noreferrer">DataSF streets</a><a href="https://link.springer.com/article/10.1007/s11116-026-10766-2" target="_blank" rel="noreferrer">Deterrence decay research</a></div>
+          <div class="data-note">Boardings: August 2026 SFMTA route/day averages. Stop/time demand, frequent-rider behavior, and enforcement outcomes are synthetic. Reported FY2025 fare revenue of $111.419M is shown only as a historical benchmark. Map uses licensed SFMTA transit data; SFMTA/Muni endorsement is not implied.</div>
+          <details class="license-note"><summary>Transit data license notice</summary><p>Reproduced with permission granted by the City and County of San Francisco. The information has been provided by means of a nonexclusive, limited, and revocable license granted by the City and County of San Francisco.</p><p>The City and County of San Francisco does not guarantee the accuracy, adequacy, completeness or usefulness of any information. The City and County of San Francisco provides this information “as is,” without warranty of any kind, express or implied, including but not limited to warranties of merchantability or fitness for a particular purpose, and assumes no responsibility for anyone's use of the information.</p></details>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
