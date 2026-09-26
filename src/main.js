@@ -46,6 +46,8 @@ const state = {
   simBusy: false,
   pendingModelUpdate: false,
   modelReady: false,
+  analyticsReady: false,
+  analyticsRunning: false,
 };
 
 const formatMoney = (value, compact = false, digits = 0) => {
@@ -968,6 +970,7 @@ function renderComparison(data) {
   el("comparisonTeamLabel").textContent = `${state.teamCount} ${state.teamCount === 1 ? "team" : "teams"} · same rider population`;
   el("comparisonRows").innerHTML = STRATEGIES.map((strategy) => {
     const scenario = state.scenarios.get(strategy.id);
+    if (!scenario) return `<tr><td class="strategy-name-cell">${escapeHtml(strategy.label)}<span>${escapeHtml(strategy.sub)}</span></td><td colspan="7">${state.analyticsRunning ? "Calculating…" : "Available when you open the comparison"}</td></tr>`;
     const checked = scenario?.allEvents.reduce((sum, event) => sum + (event.day <= DAY_COUNT ? event.checkedCount : 0), 0) || 0;
     const exposed = scenario?.allEvents.reduce((sum, event) => sum + event.visibleCount, 0) || 0;
     const current = state.strategy === strategy.id ? " is-current" : "";
@@ -1002,12 +1005,16 @@ function renderComparison(data) {
     el("strategySelect").value = state.strategy;
   el("comparisonRows").setAttribute("aria-label", `Strategies compare 90-day checks, exposure, expected citations, incremental fares, collected fines, prorated inspector cost and net return. Historical annual baseline fare revenue was ${formatMoney(annualBaseline)}.`);
   const breakEvenRow = state.staffingCurve.find((row) => row.marginalNet <= 0);
-  el("staffingRecommendation").textContent = state.staffingLimitReached
+  el("staffingRecommendation").textContent = !state.analyticsReady
+    ? state.analyticsRunning ? "Calculating marginal value per team…" : "Open the strategy comparison to calculate staffing break-even."
+    : state.staffingLimitReached
     ? `All ${MAX_INSPECTORS} tested teams remain positive; ${MAX_INSPECTORS} is only a lower bound on break-even.`
     : breakEvenRow
       ? `${breakEvenRow.inspectors - 1} team${breakEvenRow.inspectors - 1 === 1 ? "" : "s"} is the modeled revenue-maximizing staffing level; team ${breakEvenRow.inspectors} falls below break-even.`
       : "No team has positive modeled marginal net at the current assumptions; comparison uses zero teams.";
-  el("staffingRows").innerHTML = state.staffingCurve.map((row) => {
+  el("staffingRows").innerHTML = !state.analyticsReady
+    ? '<tr><td colspan="4">Staffing analysis runs when you open the comparison.</td></tr>'
+    : state.staffingCurve.map((row) => {
     const isRecommended = state.staffingLimitReached
       ? row.inspectors === state.teamCount
       : row.inspectors === state.teamCount + 1;
@@ -1070,13 +1077,41 @@ function updateModel() {
       const cached = strategy.id === "busiest" ? staffing.scenarios.get(state.teamCount) : null;
       state.scenarios.set(strategy.id, cached || buildScenario(state.map, strategy.id, inputs, strategy.id === "none" ? 0 : state.teamCount));
     }
+    state.analyticsReady = true;
+    state.analyticsRunning = false;
+    state.modelReady = true;
     state.simBusy = false;
     el("mapLoading").hidden = true;
+    el("mapLoading").classList.remove("is-progress");
     render();
     if (state.pendingModelUpdate) {
       state.pendingModelUpdate = false;
       updateModel();
     }
+  });
+}
+
+function calculateExpandedModel() {
+  if (!state.map || state.analyticsReady || state.analyticsRunning) return;
+  state.analyticsRunning = true;
+  el("mapLoading").classList.add("is-progress");
+  el("mapLoading").textContent = "Comparing strategies and staffing…";
+  el("mapLoading").hidden = false;
+  requestAnimationFrame(() => {
+    const inputs = modelInputs();
+    const staffing = calculateStaffingCurve(state.map, inputs);
+    state.teamCount = staffing.recommended;
+    state.staffingCurve = staffing.curve;
+    state.staffingLimitReached = staffing.limitReached;
+    for (const strategy of STRATEGIES) {
+      const cached = strategy.id === "busiest" ? staffing.scenarios.get(state.teamCount) : null;
+      state.scenarios.set(strategy.id, cached || buildScenario(state.map, strategy.id, inputs, strategy.id === "none" ? 0 : state.teamCount));
+    }
+    state.analyticsReady = true;
+    state.analyticsRunning = false;
+    el("mapLoading").hidden = true;
+    el("mapLoading").classList.remove("is-progress");
+    render();
   });
 }
 
@@ -1132,7 +1167,15 @@ function chooseInitialStop(data) {
 }
 
 function attachHandlers() {
-  el("strategySelect").addEventListener("change", (event) => { state.strategy = event.target.value; render(); });
+  el("strategySelect").addEventListener("change", (event) => {
+    state.strategy = event.target.value;
+    if (state.modelReady && !state.scenarios.has(state.strategy)) {
+      const strategy = STRATEGIES.find((item) => item.id === state.strategy);
+      const scenario = buildScenario(state.map, state.strategy, modelInputs(), strategy?.id === "none" ? 0 : state.teamCount);
+      state.scenarios.set(state.strategy, scenario);
+    }
+    render();
+  });
   el("daySlider").addEventListener("input", (event) => { state.day = Number(event.target.value); render(); });
   el("timeSlider").addEventListener("input", (event) => { state.minute = Number(event.target.value); render(); });
   el("playButton").addEventListener("click", () => setPlayState(!state.playing));
@@ -1190,16 +1233,9 @@ async function init() {
     state.map = buildDataIndex(mapData);
     populateRoutePicker(state.map);
     chooseInitialStop(state.map);
-    el("mapLoading").textContent = "Calculating 90-day strategies and staffing…";
     const inputs = modelInputs();
-    const staffing = calculateStaffingCurve(state.map, inputs);
-    state.teamCount = staffing.recommended;
-    state.staffingCurve = staffing.curve;
-    state.staffingLimitReached = staffing.limitReached;
-    for (const strategy of STRATEGIES) {
-      const cached = strategy.id === "busiest" ? staffing.scenarios.get(state.teamCount) : null;
-      state.scenarios.set(strategy.id, cached || buildScenario(state.map, strategy.id, inputs, strategy.id === "none" ? 0 : state.teamCount));
-    }
+    state.teamCount = 1;
+    state.scenarios.set("busiest", buildScenario(state.map, "busiest", inputs, state.teamCount));
     state.modelReady = true;
     const inspection = state.scenarios.get(state.strategy)?.schedule[state.day]
       ?.filter((event) => event.minute <= state.minute)
@@ -1207,6 +1243,13 @@ async function init() {
     if (inspection?.stopId) state.selectedStopId = inspection.stopId;
     render();
     el("mapLoading").classList.remove("is-progress");
+    const comparisonObserver = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        comparisonObserver.disconnect();
+        calculateExpandedModel();
+      }
+    }, { rootMargin: "0px" });
+    comparisonObserver.observe(el("comparisonSection"));
     const resizeObserver = new ResizeObserver(() => renderMap(state.map));
     resizeObserver.observe(el("cityMap").parentElement);
   } catch (error) {
